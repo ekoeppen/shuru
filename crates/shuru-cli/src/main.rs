@@ -5,6 +5,7 @@ mod config;
 mod vm;
 
 use std::process;
+use tracing::info;
 
 use anyhow::Result;
 use clap::Parser;
@@ -15,14 +16,9 @@ use cli::{CheckpointCommands, Cli, Commands};
 use config::load_config;
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
-        )
-        .init();
-
     let cli = Cli::parse();
+
+    tracing_subscriber::fmt().with_max_level(cli.verbose).init();
 
     match cli.command {
         Commands::Run {
@@ -31,6 +27,9 @@ fn main() -> Result<()> {
             console,
             command,
         } => {
+            let mut vm = vm;
+            vm.verbose = cli.verbose;
+
             let cfg = load_config(vm.config.as_deref())?;
 
             // Command resolution: CLI args > config > default /bin/sh
@@ -59,7 +58,7 @@ fn main() -> Result<()> {
                 let _ = std::fs::remove_file(format!("{}/VERSION", data_dir));
             }
             if assets::assets_ready(&data_dir) {
-                eprintln!(
+                info!(
                     "shuru: OS image already up to date ({})",
                     assets::CURRENT_VERSION
                 );
@@ -77,7 +76,7 @@ fn main() -> Result<()> {
             let entries = match std::fs::read_dir(&instances_dir) {
                 Ok(entries) => entries,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    eprintln!("shuru: no orphaned instances found");
+                    info!("shuru: no orphaned instances found");
                     return Ok(());
                 }
                 Err(e) => return Err(e.into()),
@@ -99,9 +98,9 @@ fn main() -> Result<()> {
             }
 
             if removed == 0 {
-                eprintln!("shuru: no orphaned instances found");
+                info!("shuru: no orphaned instances found");
             } else {
-                eprintln!("shuru: removed {} orphaned instance(s)", removed);
+                info!("shuru: removed {} orphaned instance(s)", removed);
             }
         }
         Commands::Checkpoint { action } => match action {
@@ -111,6 +110,8 @@ fn main() -> Result<()> {
                 from,
                 command,
             } => {
+                let mut vm = vm;
+                vm.verbose = cli.verbose;
                 let exit_code = checkpoint::create(name, &vm, from.as_deref(), command)?;
                 process::exit(exit_code);
             }
@@ -124,9 +125,9 @@ fn main() -> Result<()> {
 
 /// Run the VM in raw serial console mode (for debugging).
 fn run_console(prepared: &vm::PreparedVm) -> Result<i32> {
-    eprintln!("shuru: kernel={}", prepared.kernel_path);
-    eprintln!("shuru: rootfs={} (work copy)", prepared.work_rootfs);
-    eprintln!(
+    info!("shuru: kernel={}", prepared.kernel_path);
+    info!("shuru: rootfs={} (work copy)", prepared.work_rootfs);
+    info!(
         "shuru: booting VM ({}cpus, {}MB RAM, {}MB disk)...",
         prepared.cpus, prepared.memory, prepared.disk_size
     );
@@ -139,34 +140,34 @@ fn run_console(prepared: &vm::PreparedVm) -> Result<i32> {
         .allow_net(prepared.allow_net);
 
     if let Some(initrd) = &prepared.initrd_path {
-        eprintln!("shuru: using initramfs: {}", initrd);
+        info!("shuru: using initramfs: {}", initrd);
         builder = builder.initrd(initrd);
     }
 
     for m in &prepared.mounts {
-        eprintln!("shuru: mount {} -> {}", m.host_path, m.guest_path);
+        info!("shuru: mount {} -> {}", m.host_path, m.guest_path);
         builder = builder.mount(m.clone());
     }
 
     let sandbox = builder.build()?;
-    eprintln!("shuru: VM created and validated successfully");
+    info!("shuru: VM created and validated successfully");
 
     let state_rx = sandbox.state_channel();
 
-    eprintln!("shuru: starting VM...");
+    info!("shuru: starting VM...");
     sandbox.start()?;
-    eprintln!("shuru: VM started");
+    info!("shuru: VM started");
 
-    eprintln!("shuru: running in console mode (Ctrl+C to stop)");
+    info!("shuru: running in console mode (Ctrl+C to stop)");
     let mut exit_code = 0;
     loop {
         match state_rx.recv() {
             Ok(VmState::Stopped) => {
-                eprintln!("shuru: VM stopped");
+                info!("shuru: VM stopped");
                 break;
             }
             Ok(VmState::Error) => {
-                eprintln!("shuru: VM encountered an error");
+                info!("shuru: VM encountered an error");
                 exit_code = 1;
                 break;
             }

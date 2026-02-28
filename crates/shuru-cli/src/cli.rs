@@ -1,4 +1,5 @@
 use clap::Parser;
+use clap_verbosity_flag::Verbosity;
 
 #[derive(clap::Args)]
 pub(crate) struct VmArgs {
@@ -41,11 +42,18 @@ pub(crate) struct VmArgs {
     /// Path to config file (default: ./shuru.json)
     #[arg(long)]
     pub config: Option<String>,
+
+    #[arg(skip)]
+    pub verbose: Verbosity,
 }
 
 #[derive(Parser)]
 #[command(name = "shuru", about = "microVM sandbox for AI agents", version)]
 pub(crate) struct Cli {
+    /// Show verbose output (includes kernel boot logs)
+    #[command(flatten)]
+    pub verbose: Verbosity,
+
     #[command(subcommand)]
     pub command: Commands,
 }

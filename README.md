@@ -28,6 +28,11 @@ shuru run --allow-net
 
 # Custom resources
 shuru run --cpus 4 --memory 4096 --disk-size 8192 -- make -j4
+
+# Show verbose output (includes kernel boot logs)
+shuru run --verbose -- echo "booted with logs"
+# or
+shuru -v run -- echo "booted with logs"
 ```
 
 ### Directory mounts

@@ -5,6 +5,7 @@ use std::os::fd::AsRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tracing::info;
 
 use anyhow::{bail, Context, Result};
 use crossbeam_channel::Receiver;
@@ -36,6 +37,7 @@ pub struct VmConfigBuilder {
     cpus: usize,
     memory_mb: u64,
     console: bool,
+    quiet: bool,
     allow_net: bool,
     mounts: Vec<MountConfig>,
 }
@@ -49,9 +51,15 @@ impl VmConfigBuilder {
             cpus: 2,
             memory_mb: 2048,
             console: true,
+            quiet: false,
             allow_net: false,
             mounts: Vec::new(),
         }
+    }
+
+    pub fn quiet(mut self, enabled: bool) -> Self {
+        self.quiet = enabled;
+        self
     }
 
     /// When false, serial console stdin is disconnected and stdout goes to
@@ -112,7 +120,12 @@ impl VmConfigBuilder {
             boot_loader.set_initrd(initrd);
         }
 
-        boot_loader.set_command_line("console=hvc0 root=/dev/vda rw");
+        let cmdline = if self.quiet {
+            "console=hvc0 root=/dev/vda rw quiet loglevel=3"
+        } else {
+            "console=hvc0 root=/dev/vda rw"
+        };
+        boot_loader.set_command_line(cmdline);
 
         let memory_bytes = self.memory_mb * 1024 * 1024;
         let config = VirtualMachineConfiguration::new(&boot_loader, self.cpus, memory_bytes);
@@ -319,11 +332,7 @@ impl Sandbox {
     /// Puts the host terminal in raw mode, relays I/O bidirectionally over
     /// vsock, and handles SIGWINCH for window resize.
     /// Returns the guest process exit code.
-    pub fn shell(
-        &self,
-        argv: &[impl AsRef<str>],
-        env: &HashMap<String, String>,
-    ) -> Result<i32> {
+    pub fn shell(&self, argv: &[impl AsRef<str>], env: &HashMap<String, String>) -> Result<i32> {
         let stdin_fd = std::io::stdin().as_raw_fd();
         let (rows, cols) = terminal::terminal_size(stdin_fd);
 
@@ -460,7 +469,7 @@ impl Sandbox {
             let vm = Arc::clone(&self.vm);
             let stop_flag = stop.clone();
 
-            eprintln!(
+            info!(
                 "shuru: forwarding 127.0.0.1:{} -> guest:{}",
                 mapping.host_port, mapping.guest_port
             );
@@ -474,8 +483,10 @@ impl Sandbox {
                             let _ = tcp_stream.set_nonblocking(false);
                             let vm = Arc::clone(&vm);
                             std::thread::spawn(move || {
-                                if let Err(e) = handle_forward_connection(tcp_stream, &vm, guest_port) {
-                                    eprintln!("shuru: port forward error: {}", e);
+                                if let Err(e) =
+                                    handle_forward_connection(tcp_stream, &vm, guest_port)
+                                {
+                                    info!("shuru: port forward error: {}", e);
                                 }
                             });
                         }
@@ -559,8 +570,7 @@ fn handle_forward_connection(
     vsock_stream.flush()?;
 
     // Read response - byte-by-byte to avoid buffering past the newline
-    let line = read_line_raw(&mut vsock_stream)
-        .context("reading forward response")?;
+    let line = read_line_raw(&mut vsock_stream).context("reading forward response")?;
     let resp: ForwardResponse =
         serde_json::from_str(line.trim()).context("parsing forward response")?;
 
