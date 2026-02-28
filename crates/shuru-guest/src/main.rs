@@ -104,6 +104,8 @@ mod guest {
     struct MountRequest {
         tag: String,
         guest_path: String,
+        #[serde(default)]
+        pub persistent: bool,
     }
 
     #[derive(Serialize)]
@@ -123,17 +125,36 @@ mod guest {
             };
         }
 
-        match mount_overlay(&req.tag, &req.guest_path) {
-            Ok(()) => MountResponse {
-                tag: req.tag.clone(),
-                ok: true,
-                error: None,
-            },
-            Err(msg) => MountResponse {
-                tag: req.tag.clone(),
-                ok: false,
-                error: Some(msg),
-            },
+        if req.persistent {
+            // Direct mount (persistent write mode)
+            if mount_fs(&req.tag, &req.guest_path, "virtiofs", None) {
+                eprintln!("shuru-guest: mounted {} -> {} (direct/persistent)", req.tag, req.guest_path);
+                MountResponse {
+                    tag: req.tag.clone(),
+                    ok: true,
+                    error: None,
+                }
+            } else {
+                MountResponse {
+                    tag: req.tag.clone(),
+                    ok: false,
+                    error: Some(format!("failed to mount virtiofs device '{}' directly", req.tag)),
+                }
+            }
+        } else {
+            // Overlay mount (ephemeral write mode)
+            match mount_overlay(&req.tag, &req.guest_path) {
+                Ok(()) => MountResponse {
+                    tag: req.tag.clone(),
+                    ok: true,
+                    error: None,
+                },
+                Err(msg) => MountResponse {
+                    tag: req.tag.clone(),
+                    ok: false,
+                    error: Some(msg),
+                },
+            }
         }
     }
 

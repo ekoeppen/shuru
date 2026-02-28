@@ -61,6 +61,8 @@ pub struct ForwardResponse {
 pub struct MountRequest {
     pub tag: String,
     pub guest_path: String,
+    #[serde(default)]
+    pub persistent: bool,
 }
 
 /// Sent by the guest in response to a MountRequest.

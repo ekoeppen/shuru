@@ -24,6 +24,7 @@ use crate::{VSOCK_PORT, VSOCK_PORT_FORWARD};
 pub struct MountConfig {
     pub host_path: String,
     pub guest_path: String,
+    pub persistent: bool,
 }
 
 // --- VmConfigBuilder ---
@@ -150,13 +151,14 @@ impl VmConfigBuilder {
 
         for (i, m) in self.mounts.iter().enumerate() {
             let tag = format!("mount{}", i);
-            // Host directory is always read-only from the VM side.
-            // Overlay mode uses tmpfs upper layer inside the guest.
-            let shared_dir = SharedDirectory::new(&m.host_path, true);
+            // Host directory is read-only unless persistent=true.
+            // If not persistent, the guest will use OverlayFS with tmpfs.
+            let shared_dir = SharedDirectory::new(&m.host_path, !m.persistent);
             fs_devices.push(VirtioFileSystemDevice::new(&tag, &shared_dir));
             mount_requests.push(MountRequest {
                 tag,
                 guest_path: m.guest_path.clone(),
+                persistent: m.persistent,
             });
         }
 

@@ -204,11 +204,11 @@ pub(crate) fn run_command(prepared: &PreparedVm, command: &[String]) -> Result<i
     Ok(exit_code)
 }
 
-/// Parse a "HOST:GUEST" mount spec string.
+/// Parse a "HOST:GUEST[:ro|rw]" mount spec string.
 fn parse_mount_spec(s: &str) -> Result<MountConfig> {
-    let parts: Vec<&str> = s.splitn(2, ':').collect();
+    let parts: Vec<&str> = s.split(':').collect();
     if parts.len() < 2 {
-        bail!("expected HOST:GUEST format (e.g. ./src:/workspace)");
+        bail!("expected HOST:GUEST or HOST:GUEST:MODE (e.g. ./src:/workspace:ro)");
     }
 
     let host_path = std::fs::canonicalize(parts[0])
@@ -221,9 +221,19 @@ fn parse_mount_spec(s: &str) -> Result<MountConfig> {
         bail!("guest path must be absolute (start with /): '{}'", guest_path);
     }
 
+    let mut persistent = false;
+    if parts.len() > 2 {
+        match parts[2] {
+            "ro" => persistent = false,
+            "rw" => persistent = true,
+            _ => bail!("invalid mount mode (must be :ro or :rw): '{}'", parts[2]),
+        }
+    }
+
     Ok(MountConfig {
         host_path,
         guest_path,
+        persistent,
     })
 }
 
