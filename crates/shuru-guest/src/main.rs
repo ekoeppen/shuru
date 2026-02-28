@@ -1,4 +1,7 @@
 #[cfg(target_os = "linux")]
+use syslog::Facility;
+
+#[cfg(target_os = "linux")]
 mod guest {
     use std::io::{BufRead, BufReader, Read, Write};
     use std::os::unix::io::FromRawFd;
@@ -78,7 +81,7 @@ mod guest {
             )
         };
         if ret != 0 {
-            eprintln!(
+            log::info!(
                 "shuru-guest: failed to mount {} on {}: {}",
                 source,
                 target,
@@ -94,7 +97,12 @@ mod guest {
         mount_fs("sysfs", "/sys", "sysfs", None);
         mount_fs("devtmpfs", "/dev", "devtmpfs", None);
         std::fs::create_dir_all("/dev/pts").ok();
-        mount_fs("devpts", "/dev/pts", "devpts", Some("newinstance,ptmxmode=0666"));
+        mount_fs(
+            "devpts",
+            "/dev/pts",
+            "devpts",
+            Some("newinstance,ptmxmode=0666"),
+        );
         mount_fs("tmpfs", "/tmp", "tmpfs", None);
     }
 
@@ -121,14 +129,21 @@ mod guest {
             return MountResponse {
                 tag: req.tag.clone(),
                 ok: false,
-                error: Some(format!("failed to create mount point {}: {}", req.guest_path, e)),
+                error: Some(format!(
+                    "failed to create mount point {}: {}",
+                    req.guest_path, e
+                )),
             };
         }
 
         if req.persistent {
             // Direct mount (persistent write mode)
             if mount_fs(&req.tag, &req.guest_path, "virtiofs", None) {
-                eprintln!("shuru-guest: mounted {} -> {} (direct/persistent)", req.tag, req.guest_path);
+                log::info!(
+                    "shuru-guest: mounted {} -> {} (direct/persistent)",
+                    req.tag,
+                    req.guest_path
+                );
                 MountResponse {
                     tag: req.tag.clone(),
                     ok: true,
@@ -138,7 +153,10 @@ mod guest {
                 MountResponse {
                     tag: req.tag.clone(),
                     ok: false,
-                    error: Some(format!("failed to mount virtiofs device '{}' directly", req.tag)),
+                    error: Some(format!(
+                        "failed to mount virtiofs device '{}' directly",
+                        req.tag
+                    )),
                 }
             }
         } else {
@@ -190,7 +208,7 @@ mod guest {
             return Err(format!("failed to mount overlay at {}", guest_path));
         }
 
-        eprintln!("shuru-guest: mounted {} -> {} (overlay)", tag, guest_path);
+        log::info!("shuru-guest: mounted {} -> {} (overlay)", tag, guest_path);
         Ok(())
     }
 
@@ -206,13 +224,13 @@ mod guest {
 
             let display_name = String::from_utf8_lossy(&name[..name.len().saturating_sub(1)]);
             if libc::ioctl(sock, libc::SIOCGIFFLAGS as _, &mut ifr) < 0 {
-                eprintln!("shuru-guest: failed to get {} flags", display_name);
+                log::info!("shuru-guest: failed to get {} flags", display_name);
                 return;
             }
 
             ifr.ifr_ifru.ifru_flags |= libc::IFF_UP as libc::c_short;
             if libc::ioctl(sock, libc::SIOCSIFFLAGS as _, &ifr) < 0 {
-                eprintln!("shuru-guest: failed to bring up {}", display_name);
+                log::info!("shuru-guest: failed to bring up {}", display_name);
             }
         }
     }
@@ -225,7 +243,7 @@ mod guest {
         unsafe {
             let sock = libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0);
             if sock < 0 {
-                eprintln!("shuru-guest: failed to create socket for networking setup");
+                log::info!("shuru-guest: failed to create socket for networking setup");
                 return;
             }
 
@@ -244,7 +262,7 @@ mod guest {
 
             if !has_eth0 {
                 libc::close(sock);
-                eprintln!("shuru-guest: no network device (sandbox mode)");
+                log::info!("shuru-guest: no network device (sandbox mode)");
                 return;
             }
 
@@ -262,9 +280,9 @@ mod guest {
             libc::close(sock);
 
             if has_ip {
-                eprintln!("shuru-guest: network already configured (by initramfs)");
+                log::info!("shuru-guest: network already configured (by initramfs)");
             } else {
-                eprintln!("shuru-guest: eth0 present but no IP configured");
+                log::info!("shuru-guest: eth0 present but no IP configured");
             }
         }
     }
@@ -361,7 +379,7 @@ mod guest {
         loop {
             line_buf.clear();
             match reader.read_line(&mut line_buf) {
-                Ok(0) => break,  // EOF
+                Ok(0) => break, // EOF
                 Err(_) => break,
                 Ok(_) => {}
             }
@@ -770,9 +788,8 @@ mod guest {
 
     fn forward_accept_loop(listener_fd: i32) {
         loop {
-            let client_fd = unsafe {
-                libc::accept(listener_fd, std::ptr::null_mut(), std::ptr::null_mut())
-            };
+            let client_fd =
+                unsafe { libc::accept(listener_fd, std::ptr::null_mut(), std::ptr::null_mut()) };
 
             if client_fd < 0 {
                 continue;
@@ -828,7 +845,7 @@ mod guest {
         let tcp_stream = match std::net::TcpStream::connect(("127.0.0.1", req.port)) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("shuru-guest: forward to port {} failed: {}", req.port, e);
+                log::info!("shuru-guest: forward to port {} failed: {}", req.port, e);
                 let resp = ForwardResponse {
                     status: "error".into(),
                     message: Some(format!("connection refused: {}", e)),
@@ -882,10 +899,10 @@ mod guest {
     }
 
     pub fn run() -> ! {
-        eprintln!("shuru-guest: starting as PID 1");
+        log::info!("shuru-guest: starting as PID 1");
 
         mount_filesystems();
-        eprintln!("shuru-guest: filesystems mounted");
+        log::info!("shuru-guest: filesystems mounted");
 
         // Set hostname
         let hostname = b"shuru\0";
@@ -894,20 +911,29 @@ mod guest {
         }
 
         setup_networking();
-        eprintln!("shuru-guest: networking ready");
+        log::info!("shuru-guest: networking ready");
 
         // Register signal handlers (PID 1 has no default signal dispositions)
         unsafe {
-            libc::signal(libc::SIGCHLD, sigchld_handler as *const () as libc::sighandler_t);
-            libc::signal(libc::SIGTERM, sigterm_handler as *const () as libc::sighandler_t);
-            libc::signal(libc::SIGINT, sigterm_handler as *const () as libc::sighandler_t);
+            libc::signal(
+                libc::SIGCHLD,
+                sigchld_handler as *const () as libc::sighandler_t,
+            );
+            libc::signal(
+                libc::SIGTERM,
+                sigterm_handler as *const () as libc::sighandler_t,
+            );
+            libc::signal(
+                libc::SIGINT,
+                sigterm_handler as *const () as libc::sighandler_t,
+            );
         }
 
         let listener_fd = create_vsock_listener(VSOCK_PORT);
-        eprintln!("shuru-guest: vsock listening on port {}", VSOCK_PORT);
+        log::info!("shuru-guest: vsock listening on port {}", VSOCK_PORT);
 
         let fwd_listener_fd = create_vsock_listener(VSOCK_PORT_FORWARD);
-        eprintln!(
+        log::info!(
             "shuru-guest: port forward listener on port {}",
             VSOCK_PORT_FORWARD
         );
@@ -916,16 +942,15 @@ mod guest {
         });
 
         loop {
-            let client_fd = unsafe {
-                libc::accept(listener_fd, std::ptr::null_mut(), std::ptr::null_mut())
-            };
+            let client_fd =
+                unsafe { libc::accept(listener_fd, std::ptr::null_mut(), std::ptr::null_mut()) };
 
             if client_fd < 0 {
                 reap_zombies();
                 continue;
             }
 
-            eprintln!("shuru-guest: accepted vsock connection");
+            log::info!("shuru-guest: accepted vsock connection");
 
             std::thread::spawn(move || {
                 handle_connection(client_fd);
@@ -938,11 +963,17 @@ mod guest {
 
 fn main() {
     #[cfg(target_os = "linux")]
+    let _ = syslog::init(
+        Facility::LOG_USER,
+        log::LevelFilter::Debug,
+        Some("shuru-guest"),
+    );
+    #[cfg(target_os = "linux")]
     guest::run();
 
     #[cfg(not(target_os = "linux"))]
     {
-        eprintln!("shuru-guest is a Linux-only binary meant to run inside a VM");
+        log::info!("shuru-guest is a Linux-only binary meant to run inside a VM");
         std::process::exit(1);
     }
 }

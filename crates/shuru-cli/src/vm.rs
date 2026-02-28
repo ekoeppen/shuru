@@ -91,7 +91,7 @@ pub(crate) fn prepare_vm(vm: &VmArgs, cfg: &ShuruConfig, from: Option<&str>) -> 
     let rootfs_path = vm
         .rootfs
         .clone()
-        .unwrap_or_else(|| format!("{}/rootfs.ext4", data_dir));
+        .unwrap_or_else(|| format!("{}/rootfs-debian.ext4", data_dir));
     let initrd_path_str = vm
         .initrd
         .clone()

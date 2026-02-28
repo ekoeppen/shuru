@@ -229,13 +229,11 @@ DHCPEOF
 /bin/mount -t sysfs none /sys
 /bin/mount -t devtmpfs none /dev
 
-echo "initramfs: loading modules..."
 for mod in virtio_blk crc32c_generic libcrc32c jbd2 mbcache ext4 af_packet virtio_net vsock vmw_vsock_virtio_transport_common vmw_vsock_virtio_transport fuse virtiofs overlay; do
-    /bin/modprobe ${mod} 2>/dev/null && echo "  loaded: ${mod}" || echo "  FAILED: ${mod}"
+    /bin/modprobe ${mod} 2>/dev/null || echo "  FAILED: ${mod}"
 done
 
 # Wait for block device to appear
-echo "initramfs: waiting for /dev/vda..."
 i=0
 while [ ! -b /dev/vda ] && [ $i -lt 10 ]; do
     sleep 1
@@ -251,10 +249,8 @@ if [ ! -b /dev/vda ]; then
     exec /bin/sh
 fi
 
-echo "initramfs: resizing filesystem..."
-/sbin/resize2fs /dev/vda 2>/dev/null || true
+/sbin/resize2fs /dev/vda >/dev/null 2>&1 || true
 
-echo "initramfs: mounting /dev/vda..."
 /bin/mount -t ext4 /dev/vda /newroot
 
 if [ ! -x /newroot/usr/bin/shuru-init ]; then
@@ -266,16 +262,12 @@ fi
 # Network setup (if eth0 exists) -- do DHCP before switch_root
 # so shuru-guest does not race the host NAT attachment
 if ifconfig eth0 up 2>/dev/null; then
-    echo "initramfs: configuring network via DHCP..."
     udhcpc -i eth0 -n -q -s /etc/udhcpc.sh -t 5 -T 2 2>/dev/null
-    if [ $? -eq 0 ]; then
-        echo "initramfs: network configured"
-    else
+    if [ $? -ne 0 ]; then
         echo "initramfs: DHCP failed (will retry in guest)"
     fi
 fi
 
-echo "initramfs: switching to real root..."
 /bin/umount /proc
 /bin/umount /sys
 /bin/umount /dev

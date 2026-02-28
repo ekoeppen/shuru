@@ -9,7 +9,7 @@ ROOTFS_IMG="${DATA_DIR}/rootfs-debian.ext4"
 GUEST_BINARY="target/aarch64-unknown-linux-gnu/release/shuru-guest"
 ROOTFS_SIZE_MB=2048
 
-EXTRA_PACKAGES="libgomp1,zsh,xz-utils,less,git,openssh-client,jq"
+EXTRA_PACKAGES="libgomp1,zsh,xz-utils,less,git,openssh-client,jq,file"
 
 DEBIAN_MIRROR="http://deb.debian.org/debian"
 DEBIAN_SECURITY="http://security.debian.org/debian-security"
