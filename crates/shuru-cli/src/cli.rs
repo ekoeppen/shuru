@@ -35,6 +35,10 @@ pub(crate) struct VmArgs {
     #[arg(short = 'p', long = "port", value_name = "HOST:GUEST")]
     pub port: Vec<String>,
 
+    /// Set environment variables (KEY=VALUE)
+    #[arg(short = 'e', long = "env", value_name = "KEY=VALUE")]
+    pub env: Vec<String>,
+
     /// Mount a host directory into the VM (HOST:GUEST[:ro|rw])
     #[arg(long = "mount", value_name = "HOST:GUEST[:MODE]")]
     pub mount: Vec<String>,

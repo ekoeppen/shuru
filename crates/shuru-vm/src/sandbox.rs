@@ -269,6 +269,7 @@ impl Sandbox {
     pub fn exec(
         &self,
         argv: &[impl AsRef<str>],
+        env: &HashMap<String, String>,
         stdout: &mut impl Write,
         stderr: &mut impl Write,
     ) -> Result<i32> {
@@ -280,7 +281,7 @@ impl Sandbox {
 
         let req = ExecRequest {
             argv: argv.iter().map(|s| s.as_ref().to_string()).collect(),
-            env: HashMap::new(),
+            env: env.clone(),
             tty: None,
             rows: None,
             cols: None,

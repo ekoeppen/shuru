@@ -22,6 +22,7 @@ pub(crate) struct PreparedVm {
     pub allow_net: bool,
     pub verbose: bool,
     pub forwards: Vec<PortMapping>,
+    pub env: HashMap<String, String>,
     pub mounts: Vec<MountConfig>,
 }
 
@@ -45,6 +46,18 @@ pub(crate) fn prepare_vm(vm: &VmArgs, cfg: &ShuruConfig, from: Option<&str>) -> 
         let mapping =
             parse_port_mapping(s).with_context(|| format!("invalid port mapping: '{}'", s))?;
         forwards.push(mapping);
+    }
+
+    // Merge environment variables: config file + CLI flags
+    let mut env = HashMap::new();
+    if let Some(ref cfg_env) = cfg.env {
+        for (k, v) in cfg_env {
+            env.insert(k.clone(), v.clone());
+        }
+    }
+    for s in &vm.env {
+        let (k, v) = parse_env_var(s)?;
+        env.insert(k, v);
     }
 
     // Merge mounts: CLI flags + config file
@@ -146,6 +159,7 @@ pub(crate) fn prepare_vm(vm: &VmArgs, cfg: &ShuruConfig, from: Option<&str>) -> 
         allow_net,
         verbose,
         forwards,
+        env,
         mounts,
     })
 }
@@ -193,9 +207,14 @@ pub(crate) fn run_command(prepared: &PreparedVm, command: &[String]) -> Result<i
     };
 
     let exit_code = if std::io::stdin().is_terminal() {
-        sandbox.shell(command, &HashMap::new())?
+        sandbox.shell(command, &prepared.env)?
     } else {
-        sandbox.exec(command, &mut std::io::stdout(), &mut std::io::stderr())?
+        sandbox.exec(
+            command,
+            &prepared.env,
+            &mut std::io::stdout(),
+            &mut std::io::stderr(),
+        )?
     };
 
     let _ = sandbox.stop();
@@ -254,4 +273,13 @@ fn parse_port_mapping(s: &str) -> Result<PortMapping> {
         host_port,
         guest_port,
     })
+}
+
+/// Parse a "KEY=VALUE" environment variable string.
+fn parse_env_var(s: &str) -> Result<(String, String)> {
+    let parts: Vec<&str> = s.splitn(2, '=').collect();
+    if parts.len() != 2 {
+        bail!("invalid environment variable (expected KEY=VALUE): '{}'", s);
+    }
+    Ok((parts[0].to_string(), parts[1].to_string()))
 }

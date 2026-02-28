@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::{bail, Result};
 use serde::Deserialize;
 
@@ -8,6 +10,7 @@ pub(crate) struct ShuruConfig {
     pub disk_size: Option<u64>,
     pub allow_net: Option<bool>,
     pub ports: Option<Vec<String>>,
+    pub env: Option<HashMap<String, String>>,
     pub mounts: Option<Vec<String>>,
     pub command: Option<Vec<String>>,
 }
